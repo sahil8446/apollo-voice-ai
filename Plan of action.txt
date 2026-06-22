@@ -1,0 +1,202 @@
+# Voice AI Agent — Implementation Spec
+
+A voice AI receptionist for **Apollo Spectra Hospitals, Pune** that handles appointment booking, rescheduling, cancellation, and conflict resolution autonomously over a phone/web call. Built on Retell, with a live deployed FastAPI + PostgreSQL backend and a re-runnable eval harness.
+
+---
+
+## 1. Stack & Rationale
+
+| Layer | Choice | Why |
+|-------|--------|-----|
+| Voice platform | **Retell** | Lower, more consistent latency out of the box (~600–800ms); purpose-built for appointment scheduling/IVR; built-in LLM simulation testing gives a head start on the eval harness |
+| Backend | **FastAPI (Python)** | Async, fast, clean OpenAPI schema that maps directly to Retell custom functions |
+| Database | **PostgreSQL** | Relational integrity for slot/appointment conflict checks |
+| Deployment | **Railway or Render** | Public URL + managed Postgres on free tier — satisfies "live deployed, no localhost" |
+
+Alternatives rejected: Vapi (higher latency variance, more config effort), LiveKit/Pipecat (full pipeline control not worth the engineering cost for a 2–3 day build).
+
+---
+
+## 2. Clinic & Seed Data
+
+**Hospital:** Apollo Spectra Hospitals, Pune — Sadashiv Peth, Parvati Road, Pune, Maharashtra (40 beds). Real data sourced from Credihealth.
+
+**14 doctors across 11 departments:**
+
+| Doctor | Department | Qualification | Exp |
+|--------|------------|---------------|-----|
+| Dr. Anand Jadhav | Orthopedics | MBBS, Dip Ortho, MCh Ortho | 32y |
+| Dr. Anand Kavi | Orthopedics | MBBS, MS Ortho | 27y |
+| Dr. Yogesh Somvanshi | Orthopedics | MBBS, Dip Ortho | 14y |
+| Dr. Aashish Arbat | Joint Replacement | MBBS, MS Ortho, MCh Ortho | 21y |
+| Dr. Jayshree Todkar | Bariatric Surgery | MBBS, MS Gen Surgery, Fellowship | 31y |
+| Dr. Avinash Vagha | General Surgery | MBBS, MS Gen Surgery, DNB | 25y |
+| Dr. Kiran Jadhav | Obstetrics & Gynaecology | MBBS, MS OBGY, DGO | 24y |
+| Dr. Hemant Todkar | Ophthalmology | MBBS, MS Ophthal, PGDMLS | 21y |
+| Dr. Nilima Mane | Internal Medicine | MBBS, MD Internal Medicine | 18y |
+| Dr. Hrishikesh T Joshi | Internal Medicine | MBBS, MD, PG Diabetology | 18y |
+| Dr. Suraj Susheel Lunavat | Urology | MBBS, MS Gen Surgery, DNB Urology | 15y |
+| Dr. Alkesh Oswal | ENT | MBBS, MS ENT, DNB | 14y |
+| Dr. Kiran Naiknaware | Radiology | MBBS, MD Radiology, Fellowship | 14y |
+| Dr. Mukta Shriram Tulpule | Dermatology | MBBS, MD | 13y |
+
+**Departments (11):** Orthopedics, Joint Replacement, Bariatric Surgery, General Surgery, Obstetrics & Gynaecology, Ophthalmology, Internal Medicine, Urology, ENT, Radiology, Dermatology.
+
+**Appointment types:** New Consultation, Follow-up, Procedure/Surgery Consult.
+
+**Slot generation:** Exact OPD times aren't published publicly, so per-doctor OPD windows are assigned realistically (e.g. Mon/Wed/Fri 10:00–13:00) in `doctor_schedules`, and bookable slots (e.g. 15-min units) are generated from those windows into the `slots` table. Bookings, conflict checks, and reschedules all run against the live DB — no hardcoded slots.
+
+---
+
+## 3. Architecture
+
+```
+Caller → Retell (STT+LLM+TTS) → tool calls (HTTPS) → FastAPI → PostgreSQL → response → spoken reply
+```
+
+Each Retell custom function maps to exactly one API endpoint. Nothing is committed until `book_appointment` is called. Caller is identified by the phone number Retell passes in.
+
+---
+
+## 4. Database Schema (5 tables)
+
+```sql
+departments (
+  id            SERIAL PRIMARY KEY,
+  name          TEXT NOT NULL UNIQUE
+)
+
+doctors (
+  id            SERIAL PRIMARY KEY,
+  name          TEXT NOT NULL,
+  department_id INT REFERENCES departments(id),
+  qualification TEXT,
+  designation   TEXT,
+  experience    INT
+)
+
+doctor_schedules (              -- real OPD windows
+  id            SERIAL PRIMARY KEY,
+  doctor_id     INT REFERENCES doctors(id),
+  day_of_week   INT,            -- 0=Mon ... 6=Sun
+  start_time    TIME,
+  end_time      TIME
+)
+
+slots (                         -- generated from schedules
+  id            SERIAL PRIMARY KEY,
+  doctor_id     INT REFERENCES doctors(id),
+  start_time    TIMESTAMP,
+  end_time      TIMESTAMP,
+  is_booked     BOOLEAN DEFAULT FALSE
+)
+
+appointments (                  -- source of truth
+  id            SERIAL PRIMARY KEY,
+  patient_name  TEXT,
+  patient_phone TEXT,
+  doctor_id     INT REFERENCES doctors(id),
+  slot_id       INT REFERENCES slots(id),
+  type          TEXT,           -- new / follow-up / procedure
+  status        TEXT DEFAULT 'booked',  -- booked / cancelled
+  created_at    TIMESTAMP DEFAULT now()
+)
+```
+
+---
+
+## 5. API Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/doctors?department=` | List doctors, filter by department/specialty |
+| GET | `/availability?doctor_id=&date=` | Open slots for a doctor on a date |
+| POST | `/appointments` | Book — checks conflict, marks slot booked |
+| PUT | `/appointments/{id}` | Reschedule — frees old slot, books new |
+| DELETE | `/appointments/{id}` | Cancel — frees slot, sets status=cancelled |
+| GET | `/appointments?phone=` | Look up caller's existing appointments |
+
+**Conflict logic:** booking checks `slots.is_booked`; if taken, return available alternatives so the agent can offer them.
+
+---
+
+## 6. Retell Tools (custom functions)
+
+| Tool | Endpoint | Notes |
+|------|----------|-------|
+| `find_doctor` | GET /doctors | Resolve vague requests ("a bone doctor" → Orthopedics) |
+| `check_availability` | GET /availability | Returns open slots + alternatives |
+| `book_appointment` | POST /appointments | Only commit point |
+| `reschedule_appointment` | PUT /appointments/{id} | |
+| `cancel_appointment` | DELETE /appointments/{id} | |
+| `lookup_appointments` | GET /appointments?phone= | Keyed on caller phone |
+
+---
+
+## 7. Conversation Requirements (rubric: error recovery)
+
+The agent must handle, autonomously, with no human fallback:
+- **Slot taken / conflict** → offer alternatives from `check_availability`.
+- **Vague request** ("a bone doctor", "someone for my knee") → map to department, confirm doctor.
+- **Mid-conversation change of mind** → re-call `check_availability` with new params; nothing committed until `book_appointment`.
+- **Reschedule / cancel** → identify caller by phone, look up existing appointment, confirm before mutating.
+- **Graceful error recovery** → if a tool call fails or returns nothing, apologize, re-ask, or offer alternatives — never dead-end.
+
+Keep the system prompt clean and minimal — the rubric explicitly penalizes prompt bloat.
+
+---
+
+## 8. Eval Harness (rubric: re-runnable, meaningful)
+
+Must be re-runnable independently by the evaluator. Build on Retell's LLM simulation testing plus a scripted scenario suite.
+
+**Dimensions to measure (define & justify in README):**
+- **Task success rate** — did the agent complete the requested action (book/reschedule/cancel)?
+- **Tool-call correctness** — right tool, right parameters, against real backend state.
+- **Conflict handling** — does it offer valid alternatives when a slot is taken?
+- **Robustness** — vague inputs, mid-call changes, error recovery.
+- **Latency** — end-to-end response time per turn.
+
+**Scenarios (minimum set):** happy-path booking; booking into a taken slot (forces conflict resolution); vague-symptom → department mapping; mid-call doctor change; reschedule; cancel; nonexistent appointment lookup.
+
+Output: pass/fail per scenario + metrics summary. Document why these dimensions, what the metrics tell you, and where the harness falls short.
+
+---
+
+## 9. Repo Structure
+
+```
+/
+├── backend/
+│   ├── main.py            # FastAPI app + endpoints
+│   ├── models.py          # SQLAlchemy models (5 tables)
+│   ├── db.py              # DB connection/session
+│   ├── seed.py            # loads Apollo seed data + generates slots
+│   └── requirements.txt
+├── retell/
+│   ├── prompt.md          # system prompt (clean, minimal)
+│   └── tools.json         # 6 custom function definitions
+├── eval/
+│   ├── scenarios.json     # test scenarios
+│   ├── run_eval.py        # re-runnable harness
+│   └── results/           # output metrics
+├── README.md              # what/why, latency story, limitations
+└── .env.example
+```
+
+---
+
+## 10. Deliverables Checklist
+
+- [ ] GitHub repo — clean, runnable with reasonable setup
+- [ ] Live deployed backend (public URL, real Postgres) + deployed Retell agent reachable by call
+- [ ] Re-runnable eval harness with committed results
+- [ ] README — what built, key choices, latency story, known limitations
+- [ ] Loom (≤3 min) — live call demo + 60-sec design walkthrough
+- [ ] Submit Google Form + interview link
+
+---
+
+## 11. Build Order
+
+1. Backend skeleton (FastAPI + models + DB) → 2. Seed script (Apollo data + slot generation) → 3. Endpoints + conflict logic → 4. Deploy to Railway/Render → 5. Retell agent (prompt + 6 tools wired to live URL) → 6. End-to-end call test (happy + messy paths) → 7. Eval harness + run → 8. README + Loom.

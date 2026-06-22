@@ -1,0 +1,196 @@
+{
+  "description": "Scenario suite for the Apollo voice agent backend. Each scenario is a sequence of tool calls (steps) executed against the live API. Steps capture runtime values (doctor_id, slot_id, appointment_id) and assert on the response. {{var}} interpolates a captured/context value; {{run_phone}} is unique per run so the suite is re-runnable.",
+  "scenarios": [
+    {
+      "name": "happy_path_booking",
+      "dimension": "task_success",
+      "steps": [
+        {
+          "action": "find_doctor",
+          "args": { "department": "Orthopedics" },
+          "capture": { "doctor_id": "doctors[0].id" },
+          "expect": { "status": 200, "json": [{ "path": "doctors", "op": "non_empty" }] }
+        },
+        {
+          "action": "check_availability",
+          "args": { "doctor_id": "{{doctor_id}}" },
+          "capture": { "slot_id": "slots[0].slot_id" },
+          "expect": { "status": 200, "json": [{ "path": "slots", "op": "non_empty" }] }
+        },
+        {
+          "action": "book",
+          "args": {
+            "patient_name": "Test Happy",
+            "patient_phone": "{{run_phone}}",
+            "slot_id": "{{slot_id}}",
+            "type": "new"
+          },
+          "capture": { "appointment_id": "appointment.id" },
+          "expect": {
+            "status": 201,
+            "json": [{ "path": "appointment.status", "op": "eq", "value": "booked" }]
+          }
+        }
+      ]
+    },
+    {
+      "name": "conflict_slot_taken",
+      "dimension": "conflict_handling",
+      "steps": [
+        {
+          "action": "find_doctor",
+          "args": { "department": "ENT" },
+          "capture": { "doctor_id": "doctors[0].id" }
+        },
+        {
+          "action": "check_availability",
+          "args": { "doctor_id": "{{doctor_id}}" },
+          "capture": { "slot_id": "slots[0].slot_id" }
+        },
+        {
+          "action": "book",
+          "args": { "patient_name": "First Caller", "patient_phone": "{{run_phone}}", "slot_id": "{{slot_id}}" },
+          "capture": { "appointment_id": "appointment.id" },
+          "expect": { "status": 201 }
+        },
+        {
+          "action": "book",
+          "args": { "patient_name": "Second Caller", "patient_phone": "9999000011", "slot_id": "{{slot_id}}" },
+          "expect": {
+            "status": 409,
+            "json": [
+              { "path": "code", "op": "eq", "value": "slot_unavailable" },
+              { "path": "alternatives", "op": "non_empty" }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "vague_symptom_to_department",
+      "dimension": "robustness",
+      "steps": [
+        {
+          "action": "find_doctor",
+          "args": { "department": "my knee hurts" },
+          "expect": {
+            "status": 200,
+            "json": [
+              { "path": "matched_department", "op": "eq", "value": "Orthopedics" },
+              { "path": "doctors", "op": "non_empty" }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "mid_call_doctor_change",
+      "dimension": "robustness",
+      "steps": [
+        {
+          "action": "find_doctor",
+          "args": { "department": "Orthopedics" },
+          "capture": { "doctor_a": "doctors[0].id" }
+        },
+        {
+          "action": "check_availability",
+          "args": { "doctor_id": "{{doctor_a}}" }
+        },
+        {
+          "action": "find_doctor",
+          "args": { "department": "Dermatology" },
+          "capture": { "doctor_b": "doctors[0].id" },
+          "expect": { "status": 200, "json": [{ "path": "matched_department", "op": "eq", "value": "Dermatology" }] }
+        },
+        {
+          "action": "check_availability",
+          "args": { "doctor_id": "{{doctor_b}}" },
+          "capture": { "slot_id": "slots[0].slot_id" },
+          "expect": { "status": 200, "json": [{ "path": "slots", "op": "non_empty" }] }
+        },
+        {
+          "action": "book",
+          "args": { "patient_name": "Changed Mind", "patient_phone": "{{run_phone}}", "slot_id": "{{slot_id}}" },
+          "capture": { "appointment_id": "appointment.id" },
+          "expect": { "status": 201, "json": [{ "path": "appointment.department", "op": "eq", "value": "Dermatology" }] }
+        }
+      ]
+    },
+    {
+      "name": "reschedule",
+      "dimension": "task_success",
+      "steps": [
+        {
+          "action": "find_doctor",
+          "args": { "department": "Internal Medicine" },
+          "capture": { "doctor_id": "doctors[0].id" }
+        },
+        {
+          "action": "check_availability",
+          "args": { "doctor_id": "{{doctor_id}}" },
+          "capture": { "slot_a": "slots[0].slot_id", "slot_b": "slots[1].slot_id" }
+        },
+        {
+          "action": "book",
+          "args": { "patient_name": "Reschedule Me", "patient_phone": "{{run_phone}}", "slot_id": "{{slot_a}}" },
+          "capture": { "appointment_id": "appointment.id" },
+          "expect": { "status": 201 }
+        },
+        {
+          "action": "reschedule",
+          "path_args": { "appointment_id": "{{appointment_id}}" },
+          "args": { "new_slot_id": "{{slot_b}}" },
+          "expect": { "status": 200, "json": [{ "path": "appointment.status", "op": "eq", "value": "booked" }] }
+        }
+      ]
+    },
+    {
+      "name": "cancel",
+      "dimension": "task_success",
+      "steps": [
+        {
+          "action": "find_doctor",
+          "args": { "department": "Urology" },
+          "capture": { "doctor_id": "doctors[0].id" }
+        },
+        {
+          "action": "check_availability",
+          "args": { "doctor_id": "{{doctor_id}}" },
+          "capture": { "slot_id": "slots[0].slot_id" }
+        },
+        {
+          "action": "book",
+          "args": { "patient_name": "Cancel Me", "patient_phone": "{{run_phone}}", "slot_id": "{{slot_id}}" },
+          "capture": { "appointment_id": "appointment.id" },
+          "expect": { "status": 201 }
+        },
+        {
+          "action": "cancel",
+          "path_args": { "appointment_id": "{{appointment_id}}" },
+          "expect": { "status": 200, "json": [{ "path": "ok", "op": "eq", "value": true }] }
+        },
+        {
+          "action": "lookup",
+          "args": { "phone": "{{run_phone}}" },
+          "expect": { "status": 200, "json": [{ "path": "appointments", "op": "empty" }] }
+        }
+      ]
+    },
+    {
+      "name": "nonexistent_appointment",
+      "dimension": "robustness",
+      "steps": [
+        {
+          "action": "lookup",
+          "args": { "phone": "0000000000" },
+          "expect": { "status": 200, "json": [{ "path": "appointments", "op": "empty" }] }
+        },
+        {
+          "action": "cancel",
+          "path_args": { "appointment_id": "999999999" },
+          "expect": { "status": 404, "json": [{ "path": "code", "op": "eq", "value": "not_found" }] }
+        }
+      ]
+    }
+  ]
+}

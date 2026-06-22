@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Apollo Voice AI — Appointments</title>
+  <style>
+    :root {
+      --bg: #0f1419; --panel: #1a2129; --line: #2a333d; --ink: #e6edf3;
+      --muted: #8b97a3; --accent: #2f9e7f; --danger: #d6604a; --chip: #243089;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font: 15px/1.5 -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg); color: var(--ink);
+    }
+    header {
+      padding: 20px 28px; border-bottom: 1px solid var(--line);
+      display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+    }
+    header h1 { font-size: 18px; margin: 0; font-weight: 650; }
+    header .sub { color: var(--muted); font-size: 13px; }
+    .wrap { padding: 24px 28px; max-width: 1100px; margin: 0 auto; }
+    .stats { display: flex; gap: 14px; margin-bottom: 22px; flex-wrap: wrap; }
+    .stat {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+      padding: 16px 20px; min-width: 130px;
+    }
+    .stat .n { font-size: 26px; font-weight: 700; }
+    .stat .l { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    .controls { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+    input, select, button {
+      background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+      border-radius: 9px; padding: 9px 12px; font-size: 14px;
+    }
+    button { cursor: pointer; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #04140e; font-weight: 600; }
+    .gate { max-width: 420px; margin: 80px auto; text-align: center; }
+    .gate input { width: 100%; margin: 12px 0; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line); font-size: 14px; }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+    tr:hover td { background: #161d24; }
+    .pill { padding: 2px 9px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .pill.booked { background: rgba(47,158,127,.18); color: #5fd3ad; }
+    .pill.cancelled { background: rgba(214,96,74,.18); color: #f0917f; }
+    .muted { color: var(--muted); }
+    .err { color: var(--danger); margin-top: 10px; min-height: 18px; }
+    .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+  </style>
+</head>
+<body>
+  <!-- Auth gate: the admin API key is held only in memory, never persisted. -->
+  <div id="gate" class="gate">
+    <h1>Apollo Voice AI — Admin</h1>
+    <p class="muted">Enter the admin API key to view appointments.</p>
+    <input id="key" type="password" placeholder="X-API-Key" />
+    <button class="primary" onclick="unlock()">Open dashboard</button>
+    <div id="gate-err" class="err"></div>
+  </div>
+
+  <div id="app" style="display:none">
+    <header>
+      <h1>Apollo Spectra Pune — Appointments</h1>
+      <span class="sub">read-only · powered by the voice agent backend</span>
+    </header>
+    <div class="wrap">
+      <div class="stats" id="stats"></div>
+      <div class="controls">
+        <select id="status">
+          <option value="">All statuses</option>
+          <option value="booked">Booked</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <input id="phone" placeholder="Filter by phone…" />
+        <button onclick="load()">Refresh</button>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Patient</th><th>Phone</th><th>Doctor</th><th>Dept</th><th>When</th><th>Type</th><th>Status</th></tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div class="err" id="err"></div>
+    </div>
+  </div>
+
+  <script>
+    // Same-origin by default; override with ?api=https://host for split hosting.
+    const API = new URLSearchParams(location.search).get("api") || "";
+    let KEY = "";
+
+    function unlock() {
+      KEY = document.getElementById("key").value.trim();
+      if (!KEY) return;
+      document.getElementById("gate").style.display = "none";
+      document.getElementById("app").style.display = "block";
+      load();
+    }
+
+    async function api(path) {
+      const r = await fetch(API + path, { headers: { "X-API-Key": KEY } });
+      if (r.status === 401) throw new Error("Invalid admin key.");
+      if (!r.ok) throw new Error("Request failed (" + r.status + ").");
+      return r.json();
+    }
+
+    function esc(s) { return String(s ?? "").replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c])); }
+
+    async function load() {
+      const err = document.getElementById("err");
+      err.textContent = "";
+      try {
+        const s = await api("/admin/stats");
+        document.getElementById("stats").innerHTML = [
+          ["Total", s.total], ["Booked", s.booked], ["Cancelled", s.cancelled],
+        ].map(([l, n]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
+
+        const status = document.getElementById("status").value;
+        const phone = document.getElementById("phone").value.trim();
+        let q = "/admin/appointments?limit=200";
+        if (status) q += "&status=" + encodeURIComponent(status);
+        if (phone) q += "&phone=" + encodeURIComponent(phone);
+
+        const data = await api(q);
+        document.getElementById("rows").innerHTML = data.appointments.length
+          ? data.appointments.map(a => `
+              <tr>
+                <td class="muted">${a.id}</td>
+                <td>${esc(a.patient_name)}</td>
+                <td class="muted">${esc(a.patient_phone)}</td>
+                <td>${esc(a.doctor_name)}</td>
+                <td class="muted">${esc(a.department)}</td>
+                <td>${esc(a.label)}</td>
+                <td class="muted">${esc(a.type)}</td>
+                <td><span class="pill ${a.status}">${a.status}</span></td>
+              </tr>`).join("")
+          : `<tr><td colspan="8" class="muted">No appointments match.</td></tr>`;
+      } catch (e) {
+        err.textContent = e.message;
+      }
+    }
+
+    document.getElementById("key").addEventListener("keydown", e => { if (e.key === "Enter") unlock(); });
+  </script>
+</body>
+</html>

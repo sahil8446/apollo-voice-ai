@@ -1,0 +1,270 @@
+{
+  "timestamp": "2026-06-22T17:17:12.007546+00:00",
+  "base_url": "http://127.0.0.1:8000",
+  "scenarios_total": 7,
+  "scenarios_passed": 7,
+  "task_success_rate": 1.0,
+  "by_dimension": {
+    "task_success": {
+      "passed": 3,
+      "total": 3
+    },
+    "conflict_handling": {
+      "passed": 1,
+      "total": 1
+    },
+    "robustness": {
+      "passed": 3,
+      "total": 3
+    }
+  },
+  "latency_ms": {
+    "count": 24,
+    "p50": 19.2,
+    "p95": 89.6,
+    "max": 203.6
+  },
+  "results": [
+    {
+      "name": "happy_path_booking",
+      "dimension": "task_success",
+      "passed": true,
+      "steps": [
+        {
+          "step": 0,
+          "action": "find_doctor",
+          "status": 200,
+          "latency_ms": 203.6,
+          "passed": true,
+          "failures": []
+        },
+        {
+          "step": 1,
+          "action": "check_availability",
+          "status": 200,
+          "latency_ms": 36.9,
+          "passed": true,
+          "failures": []
+        },
+        {
+          "step": 2,
+          "action": "book",
+          "status": 201,
+          "latency_ms": 89.6,
+          "passed": true,
+          "failures": []
+        }
+      ]
+    },
+    {
+      "name": "conflict_slot_taken",
+      "dimension": "conflict_handling",
+      "passed": true,
+      "steps": [
+        {
+          "step": 0,
+          "action": "find_doctor",
+          "status": 200,
+          "latency_ms": 21.1,
+          "passed": true,
+          "failures": []
+        },
+        {
+          "step": 1,
+          "action": "check_availability",
+          "status": 200,
+          "latency_ms": 17.3,
+          "passed": true,
+          "failures": []
+        },
+        {
+          "step": 2,
+          "action": "book",
+          "status": 201,
+          "latency_ms": 42.3,
+          "passed": true,
+          "failures": []
+        },
+        {
+          "step": 3,
+          "action": "book",
+          "status": 409,
+          "latency_ms": 20.4,
+          "passed": true,
+          "failures": []
+        }
+      ]
+    },
+    {
+      "name": "vague_symptom_to_department",
+      "dimension": "robustness",
+      "passed": true,
+      "steps": [
+        {
+          "step": 0,
+          "action": "find_doctor",
+          "status": 200,
+          "latency_ms": 17.9,
+          "passed": true,
+          "failures": []
+        }
+      ]
+    },
+    {
+      "name": "mid_call_doctor_change",
+      "dimension": "robustness",
+      "passed": true,
+      "steps": [
+        {
+          "step": 0,
+          "action": "find_doctor",
+          "status": 200,
+          "latency_ms": 15.4,
+          "passed": true,
+          "failures": []
+        },
+        {
+          "step": 1,
+          "action": "check_availability",
+          "status": 200,
+          "latency_ms": 14.6,
+          "passed": true,
+          "failures": []
+        },
+        {
+          "step": 2,
+          "action": "find_doctor",
+          "status": 200,
+          "latency_ms": 13.8,
+          "passed": true,
+          "failures": []
+        },
+        {
+          "step": 3,
+          "action": "check_availability",
+          "status": 200,
+          "latency_ms": 14.0,
+          "passed": true,
+          "failures": []
+        },
+        {
+          "step": 4,
+          "action": "book",
+          "status": 201,
+          "latency_ms": 49.7,
+          "passed": true,
+          "failures": []
+        }
+      ]
+    },
+    {
+      "name": "reschedule",
+      "dimension": "task_success",
+      "passed": true,
+      "steps": [
+        {
+          "step": 0,
+          "action": "find_doctor",
+          "status": 200,
+          "latency_ms": 15.5,
+          "passed": true,
+          "failures": []
+        },
+        {
+          "step": 1,
+          "action": "check_availability",
+          "status": 200,
+          "latency_ms": 14.2,
+          "passed": true,
+          "failures": []
+        },
+        {
+          "step": 2,
+          "action": "book",
+          "status": 201,
+          "latency_ms": 37.9,
+          "passed": true,
+          "failures": []
+        },
+        {
+          "step": 3,
+          "action": "reschedule",
+          "status": 200,
+          "latency_ms": 53.4,
+          "passed": true,
+          "failures": []
+        }
+      ]
+    },
+    {
+      "name": "cancel",
+      "dimension": "task_success",
+      "passed": true,
+      "steps": [
+        {
+          "step": 0,
+          "action": "find_doctor",
+          "status": 200,
+          "latency_ms": 16.1,
+          "passed": true,
+          "failures": []
+        },
+        {
+          "step": 1,
+          "action": "check_availability",
+          "status": 200,
+          "latency_ms": 14.6,
+          "passed": true,
+          "failures": []
+        },
+        {
+          "step": 2,
+          "action": "book",
+          "status": 201,
+          "latency_ms": 37.4,
+          "passed": true,
+          "failures": []
+        },
+        {
+          "step": 3,
+          "action": "cancel",
+          "status": 200,
+          "latency_ms": 37.5,
+          "passed": true,
+          "failures": []
+        },
+        {
+          "step": 4,
+          "action": "lookup",
+          "status": 200,
+          "latency_ms": 19.2,
+          "passed": true,
+          "failures": []
+        }
+      ]
+    },
+    {
+      "name": "nonexistent_appointment",
+      "dimension": "robustness",
+      "passed": true,
+      "steps": [
+        {
+          "step": 0,
+          "action": "lookup",
+          "status": 200,
+          "latency_ms": 13.8,
+          "passed": true,
+          "failures": []
+        },
+        {
+          "step": 1,
+          "action": "cancel",
+          "status": 404,
+          "latency_ms": 14.0,
+          "passed": true,
+          "failures": []
+        }
+      ]
+    }
+  ]
+}

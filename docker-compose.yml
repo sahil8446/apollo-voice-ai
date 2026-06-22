@@ -1,0 +1,40 @@
+# Local dev stack: Postgres + API. `docker compose up` gives you a running,
+# seeded backend at http://localhost:8000 (admin UI at http://localhost:8000/).
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: apollo
+      POSTGRES_PASSWORD: apollo
+      POSTGRES_DB: apollo_voice
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apollo -d apollo_voice"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      ENVIRONMENT: dev
+      DATABASE_URL: postgresql+asyncpg://apollo:apollo@db:5432/apollo_voice
+      VERIFY_RETELL_SIGNATURE: "false"
+      ADMIN_API_KEY: dev-admin-key-change-me
+      CORS_ORIGINS: "*"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Mount the admin UI so the app can serve it without a rebuild.
+      - ./admin-ui:/admin-ui:ro
+
+volumes:
+  pgdata:

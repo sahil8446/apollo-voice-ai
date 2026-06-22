@@ -1,0 +1,31 @@
+# Render blueprint — one-click deploy of API + managed Postgres.
+# `render blueprint launch` (or connect the repo in the dashboard) provisions
+# both. DATABASE_URL is wired automatically from the database below.
+services:
+  - type: web
+    name: apollo-voice-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /health/ready
+    envVars:
+      - key: ENVIRONMENT
+        value: prod
+      - key: DATABASE_URL
+        fromDatabase:
+          name: apollo-voice-db
+          property: connectionString
+      - key: VERIFY_RETELL_SIGNATURE
+        value: "true"
+      - key: RETELL_API_KEY
+        sync: false          # set in dashboard (secret)
+      - key: ADMIN_API_KEY
+        generateValue: true  # Render generates a strong key
+      - key: CORS_ORIGINS
+        value: "*"
+
+databases:
+  - name: apollo-voice-db
+    plan: free
+    postgresMajorVersion: "16"

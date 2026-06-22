@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Local DB / env
+*.db
+*.sqlite3
+.env
+backend/.env
+
+# Eval output (keep results/latest.json + one sample; ignore the rest)
+eval/results/eval_*.json
+!eval/results/latest.json
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

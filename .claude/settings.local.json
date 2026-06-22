@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./.venv/Scripts/python.exe -m pytest -q)",
+      "Bash(export DATABASE_URL=\"postgresql+asyncpg://apollo:apollo@localhost:5433/apollo_voice\")",
+      "Bash(export VERIFY_RETELL_SIGNATURE=false)",
+      "Bash(./.venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --log-level warning)"
+    ]
+  }
+}

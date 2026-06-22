@@ -1,0 +1,138 @@
+{
+  "_comment": "Retell custom-function definitions. Replace {{BASE_URL}} with the deployed backend URL (e.g. https://apollo-voice.up.railway.app). Each tool POSTs {name, args, call} to its url and reads the JSON `message` back to the caller. Conflict responses include an `alternatives` array.",
+  "tools": [
+    {
+      "type": "custom",
+      "name": "find_doctor",
+      "description": "Find doctors by department, specialty, or symptom. Resolves vague terms like 'bone doctor' or 'knee pain' to the right department. Use this first when the caller names a problem or specialty.",
+      "url": "{{BASE_URL}}/retell/find_doctor",
+      "speak_during_execution": true,
+      "speak_after_execution": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "department": {
+            "type": "string",
+            "description": "Department, specialty, or symptom in the caller's words (e.g. 'Orthopedics', 'bone', 'knee', 'skin rash')."
+          },
+          "name": {
+            "type": "string",
+            "description": "Partial doctor name, if the caller asked for someone specific."
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "type": "custom",
+      "name": "check_availability",
+      "description": "Get open appointment slots for a doctor, optionally on a specific date. Returns the soonest open slots; use the returned slot_id to book.",
+      "url": "{{BASE_URL}}/retell/check_availability",
+      "speak_during_execution": true,
+      "speak_after_execution": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "doctor_id": {
+            "type": "integer",
+            "description": "Doctor id from find_doctor."
+          },
+          "date": {
+            "type": "string",
+            "description": "Optional day to check, formatted YYYY-MM-DD in clinic local time."
+          }
+        },
+        "required": ["doctor_id"]
+      }
+    },
+    {
+      "type": "custom",
+      "name": "book_appointment",
+      "description": "Book an appointment into a specific open slot. Only call after confirming doctor, date, and time with the caller. If the slot was just taken, the response includes alternative times to offer.",
+      "url": "{{BASE_URL}}/retell/book_appointment",
+      "speak_during_execution": true,
+      "speak_after_execution": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "patient_name": {
+            "type": "string",
+            "description": "Full name of the patient."
+          },
+          "patient_phone": {
+            "type": "string",
+            "description": "Patient phone number. Defaults to the caller's number if omitted."
+          },
+          "slot_id": {
+            "type": "integer",
+            "description": "slot_id from check_availability."
+          },
+          "type": {
+            "type": "string",
+            "enum": ["new", "follow-up", "procedure"],
+            "description": "Appointment type. Default 'new'."
+          }
+        },
+        "required": ["patient_name", "slot_id"]
+      }
+    },
+    {
+      "type": "custom",
+      "name": "reschedule_appointment",
+      "description": "Move an existing appointment to a new open slot with the same doctor. Look up the appointment first to get its id.",
+      "url": "{{BASE_URL}}/retell/reschedule_appointment",
+      "speak_during_execution": true,
+      "speak_after_execution": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointment_id": {
+            "type": "integer",
+            "description": "Existing appointment id from lookup_appointments."
+          },
+          "new_slot_id": {
+            "type": "integer",
+            "description": "New slot_id from check_availability."
+          }
+        },
+        "required": ["appointment_id", "new_slot_id"]
+      }
+    },
+    {
+      "type": "custom",
+      "name": "cancel_appointment",
+      "description": "Cancel an existing appointment. Look it up and confirm with the caller before cancelling.",
+      "url": "{{BASE_URL}}/retell/cancel_appointment",
+      "speak_during_execution": true,
+      "speak_after_execution": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointment_id": {
+            "type": "integer",
+            "description": "Appointment id to cancel."
+          }
+        },
+        "required": ["appointment_id"]
+      }
+    },
+    {
+      "type": "custom",
+      "name": "lookup_appointments",
+      "description": "Look up the caller's existing appointments by phone number. Defaults to the caller's own number. Use before rescheduling or cancelling.",
+      "url": "{{BASE_URL}}/retell/lookup_appointments",
+      "speak_during_execution": true,
+      "speak_after_execution": true,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string",
+            "description": "Phone number to look up. Defaults to the caller's number if omitted."
+          }
+        },
+        "required": []
+      }
+    }
+  ]
+}
