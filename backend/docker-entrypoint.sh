@@ -4,10 +4,20 @@
 set -e
 
 echo "[entrypoint] running migrations..."
-alembic upgrade head || echo "[entrypoint] alembic not configured or already current"
+# Migrations are fatal: never start the server against a broken/old schema.
+alembic upgrade head
 
 echo "[entrypoint] seeding (idempotent)..."
-python -m app.seed.seed || echo "[entrypoint] seed skipped"
+# Seeding is non-fatal (avoid crash-loops) but LOUD: if it fails we print a
+# clear banner so it can't fail silently and leave an empty DB unnoticed.
+if python -m app.seed.seed; then
+  echo "[entrypoint] seed OK"
+else
+  echo "============================================================"
+  echo "[entrypoint] !!! SEED FAILED — see the traceback above.    "
+  echo "[entrypoint] !!! The API will start but the DB may be EMPTY."
+  echo "============================================================"
+fi
 
 echo "[entrypoint] starting server: $*"
 exec "$@"

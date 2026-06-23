@@ -16,10 +16,14 @@ services:
         fromDatabase:
           name: apollo-voice-db
           property: connectionString
+      # HMAC signature verification is for Retell's webhook EVENTS, not custom
+      # function (tool) calls — tool calls aren't signed with that scheme, so
+      # this must stay false for the voice agent's tools to work. Secure tool
+      # endpoints with a shared-secret header instead (see docs/architecture.md).
       - key: VERIFY_RETELL_SIGNATURE
-        value: "true"
+        value: "false"
       - key: RETELL_API_KEY
-        sync: false          # set in dashboard (secret)
+        sync: false          # set in dashboard (secret); used only for webhook events
       - key: ADMIN_API_KEY
         generateValue: true  # Render generates a strong key
       - key: CORS_ORIGINS
