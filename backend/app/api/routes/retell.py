@@ -6,19 +6,26 @@ the JSON response back to the caller. These endpoints speak that contract and
 delegate to the same services as the REST API, so there's one source of truth
 for business logic.
 
+IMPORTANT for voice UX: every tool returns HTTP 200. Retell treats any non-2xx
+as a "tool call failed", which derails the conversation — so domain problems
+(slot taken, missing info, not found) come back as 200 with ``ok:false`` and a
+speakable ``message`` (plus ``alternatives`` on conflicts). The strict
+REST API keeps its 4xx/409 status codes for the eval harness and admin UI.
+
 The caller's phone number arrives in ``call.from_number`` — per spec, that's
 how we identify the caller for lookup/reschedule/cancel without asking.
 """
 
 from __future__ import annotations
 
+import functools
 from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ValidationError
+from app.core.errors import DomainError, SlotUnavailableError
 from app.core.security import verify_retell_signature
 from app.database import get_db
 from app.models.appointment import AppointmentType
@@ -29,6 +36,27 @@ router = APIRouter(
     tags=["retell"],
     dependencies=[Depends(verify_retell_signature)],
 )
+
+
+def voice_safe(fn):
+    """Convert any DomainError into a 200 response with a speakable message,
+    so Retell never sees a tool failure for an expected business case."""
+
+    @functools.wraps(fn)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await fn(*args, **kwargs)
+        except DomainError as exc:
+            body: dict[str, Any] = {
+                "ok": False,
+                "code": exc.code,
+                "message": exc.message,
+            }
+            if isinstance(exc, SlotUnavailableError):
+                body["alternatives"] = exc.alternatives
+            return body
+
+    return wrapper
 
 
 class RetellEnvelope(BaseModel):
@@ -48,6 +76,7 @@ class RetellEnvelope(BaseModel):
 
 
 @router.post("/find_doctor")
+@voice_safe
 async def find_doctor(env: RetellEnvelope, db: AsyncSession = Depends(get_db)) -> dict:
     matched, doctors = await doctor_service.find_doctors(
         db,
@@ -73,12 +102,13 @@ async def find_doctor(env: RetellEnvelope, db: AsyncSession = Depends(get_db)) -
 
 
 @router.post("/check_availability")
+@voice_safe
 async def check_availability(
     env: RetellEnvelope, db: AsyncSession = Depends(get_db)
 ) -> dict:
     doctor_id = env.args.get("doctor_id")
     if doctor_id is None:
-        raise ValidationError("I need to know which doctor first.")
+        return {"ok": False, "message": "Which doctor would you like me to check?"}
     doctor, slots = await availability_service.open_slots(
         db, doctor_id=int(doctor_id), date=env.args.get("date")
     )
@@ -86,7 +116,7 @@ async def check_availability(
         return {
             "ok": True,
             "slots": [],
-            "message": f"Dr. {doctor.name} has no open slots then. "
+            "message": f"{doctor.name} has no open slots then. "
             "Want to try another date or doctor?",
         }
     previews = "; ".join(s.label for s in slots[:3])
@@ -95,24 +125,28 @@ async def check_availability(
         "doctor_id": doctor.id,
         "doctor_name": doctor.name,
         "slots": [s.model_dump(mode="json") for s in slots],
-        "message": f"Dr. {doctor.name} has {len(slots)} open slot(s). "
+        "message": f"{doctor.name} has {len(slots)} open slot(s). "
         f"Soonest: {previews}.",
     }
 
 
 @router.post("/book_appointment")
+@voice_safe
 async def book_appointment(
     env: RetellEnvelope, db: AsyncSession = Depends(get_db)
 ) -> dict:
     a = env.args
-    required = ("patient_name", "slot_id")
-    missing = [k for k in required if not a.get(k)]
+    missing = [k for k in ("patient_name", "slot_id") if not a.get(k)]
     if missing:
-        raise ValidationError(f"I still need: {', '.join(missing)}.")
+        labels = {"patient_name": "the patient's name", "slot_id": "which time slot"}
+        return {
+            "ok": False,
+            "message": f"I still need {', '.join(labels[k] for k in missing)}.",
+        }
 
     phone = a.get("patient_phone") or env.caller_phone()
     if not phone:
-        raise ValidationError("I need a phone number to book under.")
+        return {"ok": False, "message": "What phone number should I book this under?"}
 
     appt = await booking_service.book(
         db,
@@ -126,18 +160,22 @@ async def book_appointment(
     return {
         "ok": True,
         "appointment": appt.model_dump(mode="json"),
-        "message": f"All set — {appt.patient_name} with Dr. {appt.doctor_name} "
+        "message": f"All set — {appt.patient_name} with {appt.doctor_name} "
         f"on {appt.label}.",
     }
 
 
 @router.post("/reschedule_appointment")
+@voice_safe
 async def reschedule_appointment(
     env: RetellEnvelope, db: AsyncSession = Depends(get_db)
 ) -> dict:
     a = env.args
     if not a.get("appointment_id") or not a.get("new_slot_id"):
-        raise ValidationError("I need the appointment and the new slot.")
+        return {
+            "ok": False,
+            "message": "I need the appointment and the new time to reschedule.",
+        }
     appt = await booking_service.reschedule(
         db,
         appointment_id=int(a["appointment_id"]),
@@ -146,17 +184,18 @@ async def reschedule_appointment(
     return {
         "ok": True,
         "appointment": appt.model_dump(mode="json"),
-        "message": f"Done — moved to {appt.label} with Dr. {appt.doctor_name}.",
+        "message": f"Done — moved to {appt.label} with {appt.doctor_name}.",
     }
 
 
 @router.post("/cancel_appointment")
+@voice_safe
 async def cancel_appointment(
     env: RetellEnvelope, db: AsyncSession = Depends(get_db)
 ) -> dict:
     appointment_id = env.args.get("appointment_id")
     if appointment_id is None:
-        raise ValidationError("Which appointment should I cancel?")
+        return {"ok": False, "message": "Which appointment should I cancel?"}
     appt = await booking_service.cancel(db, appointment_id=int(appointment_id))
     return {
         "ok": True,
@@ -166,12 +205,13 @@ async def cancel_appointment(
 
 
 @router.post("/lookup_appointments")
+@voice_safe
 async def lookup_appointments(
     env: RetellEnvelope, db: AsyncSession = Depends(get_db)
 ) -> dict:
     phone = env.args.get("phone") or env.caller_phone()
     if not phone:
-        raise ValidationError("What phone number should I look under?")
+        return {"ok": False, "message": "What phone number should I look under?"}
     appts = await booking_service.lookup_by_phone(db, phone=phone)
     if not appts:
         return {
@@ -179,7 +219,7 @@ async def lookup_appointments(
             "appointments": [],
             "message": "I don't see any appointments under that number.",
         }
-    previews = "; ".join(f"Dr. {x.doctor_name} on {x.label}" for x in appts[:3])
+    previews = "; ".join(f"{x.doctor_name} on {x.label}" for x in appts[:3])
     return {
         "ok": True,
         "appointments": [x.model_dump(mode="json") for x in appts],

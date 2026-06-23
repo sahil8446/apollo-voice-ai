@@ -44,7 +44,7 @@ async def book_appointment(
     return BookingResponse(
         appointment=appt,
         message=(
-            f"Booked. {appt.patient_name} with Dr. {appt.doctor_name} "
+            f"Booked. {appt.patient_name} with {appt.doctor_name} "
             f"({appt.department}) on {appt.label}."
         ),
     )
@@ -66,7 +66,7 @@ async def reschedule_appointment(
     return BookingResponse(
         appointment=appt,
         message=(
-            f"Rescheduled. {appt.patient_name} now sees Dr. {appt.doctor_name} "
+            f"Rescheduled. {appt.patient_name} now sees {appt.doctor_name} "
             f"on {appt.label}."
         ),
     )
@@ -101,7 +101,7 @@ async def lookup_appointments(
         message = "I don't see any appointments under that number."
     else:
         previews = "; ".join(
-            f"Dr. {a.doctor_name} on {a.label}" for a in appts[:3]
+            f"{a.doctor_name} on {a.label}" for a in appts[:3]
         )
         message = f"I found {len(appts)} appointment(s): {previews}."
     return AppointmentListResponse(appointments=appts, message=message)

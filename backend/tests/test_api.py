@@ -85,3 +85,46 @@ async def test_retell_book_uses_caller_phone(client, seeded):
     # The caller's number should now find the appointment.
     look = await client.get("/appointments", params={"phone": "+919999"})
     assert look.json()["appointments"]
+
+
+async def test_retell_missing_phone_returns_200_not_error(client, seeded):
+    """Missing info must be a clean 200 re-ask, not a 4xx 'tool call failed'."""
+    r = await client.post(
+        "/retell/lookup_appointments",
+        json={"name": "lookup_appointments", "args": {}, "call": {}},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is False
+    assert "phone number" in body["message"].lower()
+
+
+async def test_retell_conflict_returns_200_with_alternatives(client, seeded):
+    """A taken slot comes back as 200 + alternatives so the agent never fails."""
+    av = await client.get("/availability", params={"doctor_id": seeded["d1"].id})
+    slot_id = av.json()["slots"][0]["slot_id"]
+    env = {"name": "book_appointment", "call": {"from_number": "+918888"}}
+
+    first = await client.post(
+        "/retell/book_appointment",
+        json={**env, "args": {"patient_name": "A", "slot_id": slot_id}},
+    )
+    assert first.status_code == 200 and first.json()["ok"] is True
+
+    second = await client.post(
+        "/retell/book_appointment",
+        json={**env, "args": {"patient_name": "B", "slot_id": slot_id}},
+    )
+    assert second.status_code == 200
+    body = second.json()
+    assert body["ok"] is False
+    assert body["alternatives"]
+
+
+async def test_no_double_doctor_title_in_messages(client, seeded):
+    """Doctor names already contain 'Dr.'; messages must not double it."""
+    r = await client.post(
+        "/retell/check_availability",
+        json={"name": "check_availability", "args": {"doctor_id": seeded["d1"].id}, "call": {}},
+    )
+    assert "Dr. Dr." not in r.json()["message"]

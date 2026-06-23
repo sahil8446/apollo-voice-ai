@@ -27,13 +27,13 @@ async def check_availability(
     if not slots:
         when = f" on {date}" if date else " in the coming days"
         message = (
-            f"Dr. {doctor.name} has no open slots{when}. "
+            f"{doctor.name} has no open slots{when}. "
             "Would you like to try another date or another doctor?"
         )
     else:
         previews = "; ".join(s.label for s in slots[:3])
         message = (
-            f"Dr. {doctor.name} has {len(slots)} open slot(s). "
+            f"{doctor.name} has {len(slots)} open slot(s). "
             f"Soonest: {previews}."
         )
 
