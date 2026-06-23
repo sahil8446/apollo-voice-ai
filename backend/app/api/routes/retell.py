@@ -21,7 +21,7 @@ from __future__ import annotations
 import functools
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,7 +29,12 @@ from app.core.errors import DomainError, SlotUnavailableError
 from app.core.security import verify_retell_signature
 from app.database import get_db
 from app.models.appointment import AppointmentType
-from app.services import availability_service, booking_service, doctor_service
+from app.services import (
+    availability_service,
+    booking_service,
+    doctor_service,
+    notifications,
+)
 
 router = APIRouter(
     prefix="/retell",
@@ -133,7 +138,9 @@ async def check_availability(
 @router.post("/book_appointment")
 @voice_safe
 async def book_appointment(
-    env: RetellEnvelope, db: AsyncSession = Depends(get_db)
+    env: RetellEnvelope,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     a = env.args
     missing = [k for k in ("patient_name", "slot_id") if not a.get(k)]
@@ -156,6 +163,10 @@ async def book_appointment(
         appt_type=AppointmentType(a.get("type", "new")),
         # Default idempotency to the call id so a retried tool call is safe.
         idempotency_key=a.get("idempotency_key") or env.call_id(),
+    )
+    # Fire-and-forget confirmation email (no-op unless SMTP is configured).
+    background_tasks.add_task(
+        notifications.send_booking_confirmation, appt, a.get("patient_email")
     )
     return {
         "ok": True,

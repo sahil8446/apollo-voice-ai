@@ -13,6 +13,8 @@ class BookRequest(BaseModel):
     patient_phone: str = Field(..., min_length=4, max_length=32)
     slot_id: int
     type: AppointmentType = AppointmentType.NEW
+    # Optional: if provided, a confirmation email is sent to the patient.
+    patient_email: str | None = Field(default=None, max_length=254)
     # Optional idempotency key; Retell can pass the call_id so retries are safe.
     idempotency_key: str | None = Field(default=None, max_length=80)
 

@@ -1,11 +1,11 @@
 {
-  "_comment": "Retell custom-function definitions. Replace {{BASE_URL}} with the deployed backend URL (e.g. https://apollo-voice.up.railway.app). Each tool POSTs {name, args, call} to its url and reads the JSON `message` back to the caller. Conflict responses include an `alternatives` array.",
+  "_comment": "Retell custom-function definitions. Replace https://apollo-voice-api.onrender.com with the deployed backend URL (e.g. https://apollo-voice.up.railway.app). Each tool POSTs {name, args, call} to its url and reads the JSON `message` back to the caller. Conflict responses include an `alternatives` array.",
   "tools": [
     {
       "type": "custom",
       "name": "find_doctor",
       "description": "Find doctors by department, specialty, or symptom. Resolves vague terms like 'bone doctor' or 'knee pain' to the right department. Use this first when the caller names a problem or specialty.",
-      "url": "{{BASE_URL}}/retell/find_doctor",
+      "url": "https://apollo-voice-api.onrender.com/retell/find_doctor",
       "speak_during_execution": true,
       "speak_after_execution": true,
       "parameters": {
@@ -27,7 +27,7 @@
       "type": "custom",
       "name": "check_availability",
       "description": "Get open appointment slots for a doctor, optionally on a specific date. Returns the soonest open slots; use the returned slot_id to book.",
-      "url": "{{BASE_URL}}/retell/check_availability",
+      "url": "https://apollo-voice-api.onrender.com/retell/check_availability",
       "speak_during_execution": true,
       "speak_after_execution": true,
       "parameters": {
@@ -49,7 +49,7 @@
       "type": "custom",
       "name": "book_appointment",
       "description": "Book an appointment into a specific open slot. Only call after confirming doctor, date, and time with the caller. If the slot was just taken, the response includes alternative times to offer.",
-      "url": "{{BASE_URL}}/retell/book_appointment",
+      "url": "https://apollo-voice-api.onrender.com/retell/book_appointment",
       "speak_during_execution": true,
       "speak_after_execution": true,
       "parameters": {
@@ -62,6 +62,10 @@
           "patient_phone": {
             "type": "string",
             "description": "Patient phone number. Defaults to the caller's number if omitted."
+          },
+          "patient_email": {
+            "type": "string",
+            "description": "Patient email, if they want an email confirmation. Optional."
           },
           "slot_id": {
             "type": "integer",
@@ -80,7 +84,7 @@
       "type": "custom",
       "name": "reschedule_appointment",
       "description": "Move an existing appointment to a new open slot with the same doctor. Look up the appointment first to get its id.",
-      "url": "{{BASE_URL}}/retell/reschedule_appointment",
+      "url": "https://apollo-voice-api.onrender.com/retell/reschedule_appointment",
       "speak_during_execution": true,
       "speak_after_execution": true,
       "parameters": {
@@ -102,7 +106,7 @@
       "type": "custom",
       "name": "cancel_appointment",
       "description": "Cancel an existing appointment. Look it up and confirm with the caller before cancelling.",
-      "url": "{{BASE_URL}}/retell/cancel_appointment",
+      "url": "https://apollo-voice-api.onrender.com/retell/cancel_appointment",
       "speak_during_execution": true,
       "speak_after_execution": true,
       "parameters": {
@@ -120,7 +124,7 @@
       "type": "custom",
       "name": "lookup_appointments",
       "description": "Look up the caller's existing appointments by phone number. Defaults to the caller's own number. Use before rescheduling or cancelling.",
-      "url": "{{BASE_URL}}/retell/lookup_appointments",
+      "url": "https://apollo-voice-api.onrender.com/retell/lookup_appointments",
       "speak_during_execution": true,
       "speak_after_execution": true,
       "parameters": {

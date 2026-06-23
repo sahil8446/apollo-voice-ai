@@ -7,7 +7,7 @@ into a 409 carrying ``alternatives`` — so the agent never dead-ends.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Path, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_retell_signature
@@ -19,7 +19,7 @@ from app.schemas.appointment import (
     CancelResponse,
     RescheduleRequest,
 )
-from app.services import booking_service
+from app.services import booking_service, notifications
 
 router = APIRouter(prefix="/appointments", tags=["appointments"])
 
@@ -31,7 +31,9 @@ router = APIRouter(prefix="/appointments", tags=["appointments"])
     dependencies=[Depends(verify_retell_signature)],
 )
 async def book_appointment(
-    payload: BookRequest, db: AsyncSession = Depends(get_db)
+    payload: BookRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
 ) -> BookingResponse:
     appt = await booking_service.book(
         db,
@@ -40,6 +42,10 @@ async def book_appointment(
         slot_id=payload.slot_id,
         appt_type=payload.type,
         idempotency_key=payload.idempotency_key,
+    )
+    # Fire-and-forget confirmation email (no-op unless SMTP is configured).
+    background_tasks.add_task(
+        notifications.send_booking_confirmation, appt, payload.patient_email
     )
     return BookingResponse(
         appointment=appt,

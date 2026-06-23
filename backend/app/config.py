@@ -58,6 +58,16 @@ class Settings(BaseSettings):
     # --- Caching ---
     cache_ttl_seconds: int = 300  # doctors/departments change rarely
 
+    # --- Email notifications (Gmail SMTP) ---
+    # All optional; email sending is enabled only when user + password are set.
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""          # your Gmail address
+    smtp_password: str = ""      # a Gmail App Password (NOT your login password)
+    smtp_from: str = ""          # defaults to smtp_user if blank
+    # Optional fixed address that gets a copy of every booking (clinic front desk).
+    clinic_notify_email: str = ""
+
     @field_validator("database_url")
     @classmethod
     def normalize_db_url(cls, v: str) -> str:
@@ -77,6 +87,14 @@ class Settings(BaseSettings):
     @property
     def is_prod(self) -> bool:
         return self.environment == "prod"
+
+    @property
+    def notifications_enabled(self) -> bool:
+        return bool(self.smtp_user and self.smtp_password)
+
+    @property
+    def email_from(self) -> str:
+        return self.smtp_from or self.smtp_user
 
 
 @lru_cache
