@@ -69,7 +69,9 @@ async def _all_departments(db: AsyncSession) -> list[str]:
         rows = await db.execute(select(Department.name).order_by(Department.name))
         return [r[0] for r in rows.all()]
 
-    return await cache.get_or_set("departments", loader)
+    # Don't cache an empty list (e.g. pre-seed) — it would poison resolution
+    # for the whole TTL on that worker. Retry until departments actually exist.
+    return await cache.get_or_set("departments", loader, cache_empty=False)
 
 
 def resolve_department(query: str, known: list[str]) -> str | None:

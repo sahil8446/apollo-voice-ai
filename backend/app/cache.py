@@ -26,7 +26,19 @@ class TTLCache:
         # monotonic() is injected to stay testable and avoid wall-clock skew.
         self._now: Callable[[], float] = time.monotonic
 
-    async def get_or_set(self, key: str, loader: Callable[[], Awaitable[Any]]) -> Any:
+    async def get_or_set(
+        self,
+        key: str,
+        loader: Callable[[], Awaitable[Any]],
+        *,
+        cache_empty: bool = True,
+    ) -> Any:
+        """Return a cached value or load and cache it.
+
+        ``cache_empty=False`` means a falsy result (e.g. an empty list because
+        the DB wasn't seeded yet) is NOT cached, so the next call retries
+        instead of serving stale emptiness for the whole TTL window.
+        """
         now = self._now()
         cached = self._store.get(key)
         if cached and cached[0] > now:
@@ -38,7 +50,8 @@ class TTLCache:
             if cached and cached[0] > self._now():
                 return cached[1]
             value = await loader()
-            self._store[key] = (self._now() + self._ttl, value)
+            if cache_empty or value:
+                self._store[key] = (self._now() + self._ttl, value)
             return value
 
     def invalidate(self, key: str | None = None) -> None:
